@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -13,31 +15,38 @@ import (
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	scsclient "github.com/openshift/client-go/servicecertsigner/clientset/versioned"
 	scsinformers "github.com/openshift/client-go/servicecertsigner/informers/externalversions"
+	"github.com/openshift/client-go/servicecertsigner/informers/externalversions/servicecertsigner/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/status"
 )
 
 func RunOperator(clientConfig *rest.Config, stopCh <-chan struct{}) error {
 	kubeClient, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	scsClient, err := scsclient.NewForConfig(clientConfig)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	dynamicClient, err := dynamic.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
 
-	operatorInformers := scsinformers.NewSharedInformerFactory(scsClient, 10*time.Minute)
-	kubeInformersNamespaced := informers.NewFilteredSharedInformerFactory(kubeClient, 10*time.Minute, targetNamespaceName, nil)
+	const defaultResync = 10 * time.Minute
+
+	operatorInformers := scsinformers.NewSharedInformerFactoryWithOptions(scsClient, defaultResync,
+		scsinformers.WithTweakListOptions(func(options *v1.ListOptions) {
+			options.FieldSelector = fields.OneTermEqualSelector("metadata.name", resourceName).String()
+		}),
+	)
+	kubeInformersNamespaced := informers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResync, informers.WithNamespace(targetNamespaceName))
 
 	clusterOperatorStatus := status.NewClusterOperatorStatusController(
-		"openshift-service-cert-signer",
-		"openshift-service-cert-signer",
+		targetNamespaceName,
+		targetNamespaceName,
 		dynamicClient,
-		&operatorStatusProvider{informers: operatorInformers},
+		&operatorStatusProvider{informer: operatorInformers.Servicecertsigner().V1alpha1().ServiceCertSignerOperatorConfigs()},
 	)
 
 	operator := NewServiceCertSignerOperator(
@@ -60,15 +69,15 @@ func RunOperator(clientConfig *rest.Config, stopCh <-chan struct{}) error {
 }
 
 type operatorStatusProvider struct {
-	informers scsinformers.SharedInformerFactory
+	informer v1alpha1.ServiceCertSignerOperatorConfigInformer
 }
 
 func (p *operatorStatusProvider) Informer() cache.SharedIndexInformer {
-	return p.informers.Servicecertsigner().V1alpha1().ServiceCertSignerOperatorConfigs().Informer()
+	return p.informer.Informer()
 }
 
 func (p *operatorStatusProvider) CurrentStatus() (operatorv1alpha1.OperatorStatus, error) {
-	instance, err := p.informers.Servicecertsigner().V1alpha1().ServiceCertSignerOperatorConfigs().Lister().Get("instance")
+	instance, err := p.informer.Lister().Get(resourceName)
 	if err != nil {
 		return operatorv1alpha1.OperatorStatus{}, err
 	}
