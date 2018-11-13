@@ -1,4 +1,4 @@
-package apiservicecabundle
+package controller
 
 import (
 	"testing"
@@ -37,7 +37,7 @@ func TestSyncAPIService(t *testing.T) {
 			name: "requested and empty",
 			startingAPIServices: []runtime.Object{
 				&apiregistrationapiv1.APIService{
-					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{InjectCABundleAnnotationName: "true"}},
+					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{injectCABundleAnnotationName: "true"}},
 				},
 			},
 			key:      "foo",
@@ -59,7 +59,7 @@ func TestSyncAPIService(t *testing.T) {
 			name: "requested and nochange",
 			startingAPIServices: []runtime.Object{
 				&apiregistrationapiv1.APIService{
-					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{InjectCABundleAnnotationName: "true"}},
+					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{injectCABundleAnnotationName: "true"}},
 					Spec: apiregistrationapiv1.APIServiceSpec{
 						CABundle: []byte("content"),
 					},
@@ -77,7 +77,7 @@ func TestSyncAPIService(t *testing.T) {
 			name: "requested and differe",
 			startingAPIServices: []runtime.Object{
 				&apiregistrationapiv1.APIService{
-					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{InjectCABundleAnnotationName: "true"}},
+					ObjectMeta: metav1.ObjectMeta{Name: "foo", Annotations: map[string]string{injectCABundleAnnotationName: "true"}},
 					Spec: apiregistrationapiv1.APIServiceSpec{
 						CABundle: []byte("old"),
 					},
