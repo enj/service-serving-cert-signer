@@ -3,7 +3,6 @@ package controller
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/golang/glog"
 
@@ -17,9 +16,8 @@ import (
 	apiservicelister "k8s.io/kube-aggregator/pkg/client/listers/apiregistration/v1"
 
 	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/controller"
+	"github.com/openshift/service-serving-cert-signer/pkg/controller/api"
 )
-
-const injectCABundleAnnotationName = "service.alpha.openshift.io/inject-cabundle"
 
 type ServiceServingCertUpdateController struct {
 	apiServiceClient apiserviceclient.APIServicesGetter
@@ -70,7 +68,7 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 	if err != nil {
 		return err
 	}
-	if !hasInjectCABundleAnnotation(apiService) {
+	if !api.HasInjectCABundleAnnotation(apiService.Annotations) {
 		return nil
 	}
 	if bytes.Equal(apiService.Spec.CABundle, c.caBundle) {
@@ -86,7 +84,7 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 
 func (c *ServiceServingCertUpdateController) handleAPIService(obj interface{}, event string) {
 	apiService := obj.(*apiregistrationapiv1.APIService)
-	if !hasInjectCABundleAnnotation(apiService) {
+	if !api.HasInjectCABundleAnnotation(apiService.Annotations) {
 		return
 	}
 
@@ -106,8 +104,4 @@ func (c *ServiceServingCertUpdateController) addAPIService(obj interface{}) {
 
 func (c *ServiceServingCertUpdateController) updateAPIService(old, cur interface{}) {
 	c.handleAPIService(cur, "updating")
-}
-
-func hasInjectCABundleAnnotation(apiService *apiregistrationapiv1.APIService) bool {
-	return strings.EqualFold(apiService.Annotations[injectCABundleAnnotationName], "true")
 }
