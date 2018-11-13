@@ -8,12 +8,10 @@ import (
 	"github.com/blang/semver"
 	"github.com/golang/glog"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	appsclientv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -32,6 +30,7 @@ import (
 const (
 	targetNamespaceName = "openshift-service-cert-signer"
 	workQueueKey        = "key"
+	resourceName        = "instance"
 )
 
 type ServiceCertSignerOperator struct {
@@ -67,15 +66,13 @@ func NewServiceCertSignerOperator(
 	namespacedKubeInformers.Core().V1().ServiceAccounts().Informer().AddEventHandler(c.eventHandler())
 	namespacedKubeInformers.Core().V1().Services().Informer().AddEventHandler(c.eventHandler())
 	namespacedKubeInformers.Apps().V1().Deployments().Informer().AddEventHandler(c.eventHandler())
-
-	// we only watch some namespaces
-	namespacedKubeInformers.Core().V1().Namespaces().Informer().AddEventHandler(c.namespaceEventHandler())
+	namespacedKubeInformers.Core().V1().Namespaces().Informer().AddEventHandler(c.eventHandler())
 
 	return c
 }
 
 func (c ServiceCertSignerOperator) sync() error {
-	operatorConfig, err := c.operatorConfigClient.ServiceCertSignerOperatorConfigs().Get("instance", metav1.GetOptions{})
+	operatorConfig, err := c.operatorConfigClient.ServiceCertSignerOperatorConfigs().Get(resourceName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -121,7 +118,7 @@ func (c ServiceCertSignerOperator) sync() error {
 
 	v310_00_to_unknown := versioning.NewRangeOrDie("3.10.0", "3.10.1")
 
-	errors := []error{}
+	var errors []error
 	switch {
 	case v310_00_to_unknown.BetweenOrEmpty(currentActualVerion) && v310_00_to_unknown.Between(&desiredVersion):
 		var versionAvailability operatorsv1alpha1.VersionAvailability
@@ -136,7 +133,7 @@ func (c ServiceCertSignerOperator) sync() error {
 			utilruntime.HandleError(err)
 		}
 
-		return fmt.Errorf("unrecognized state")
+		return fmt.Errorf("unrecognized state") // TODO maybe this should be nil
 	}
 
 	// given the VersionAvailability and the status.Version, we can compute availability
@@ -223,49 +220,5 @@ func (c *ServiceCertSignerOperator) eventHandler() cache.ResourceEventHandler {
 		AddFunc:    func(obj interface{}) { c.queue.Add(workQueueKey) },
 		UpdateFunc: func(old, new interface{}) { c.queue.Add(workQueueKey) },
 		DeleteFunc: func(obj interface{}) { c.queue.Add(workQueueKey) },
-	}
-}
-
-// this set of namespaces will include things like logging and metrics which are used to drive
-var interestingNamespaces = sets.NewString(targetNamespaceName)
-
-func (c *ServiceCertSignerOperator) namespaceEventHandler() cache.ResourceEventHandler {
-	return cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			ns, ok := obj.(*corev1.Namespace)
-			if !ok {
-				c.queue.Add(workQueueKey)
-			}
-			if ns.Name == targetNamespaceName {
-				c.queue.Add(workQueueKey)
-			}
-		},
-		UpdateFunc: func(old, new interface{}) {
-			ns, ok := old.(*corev1.Namespace)
-			if !ok {
-				c.queue.Add(workQueueKey)
-			}
-			if ns.Name == targetNamespaceName {
-				c.queue.Add(workQueueKey)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			ns, ok := obj.(*corev1.Namespace)
-			if !ok {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
-					return
-				}
-				ns, ok = tombstone.Obj.(*corev1.Namespace)
-				if !ok {
-					utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Namespace %#v", obj))
-					return
-				}
-			}
-			if ns.Name == targetNamespaceName {
-				c.queue.Add(workQueueKey)
-			}
-		},
 	}
 }

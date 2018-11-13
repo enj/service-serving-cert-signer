@@ -12,7 +12,7 @@ func sync_v311_00_to_latest(c ServiceCertSignerOperator, operatorConfig *scsv1al
 	apiServiceInjectorVersionAvailability, apiServiceInjectorErrors := syncAPIServiceController_v311_00_to_latest(c, operatorConfig, previousAvailability)
 	configMapCABundleInjectorVersionAvailability, configMapCABundleInjectorErrors := syncConfigMapCABundleController_v311_00_to_latest(c, operatorConfig, previousAvailability)
 
-	allErrors := []error{}
+	var allErrors []error
 	allErrors = append(allErrors, signingErrors...)
 	allErrors = append(allErrors, apiServiceInjectorErrors...)
 	allErrors = append(allErrors, configMapCABundleInjectorErrors...)
