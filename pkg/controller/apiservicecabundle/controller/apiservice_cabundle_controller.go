@@ -73,7 +73,7 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 	if !hasInjectCABundleAnnotation(apiService) {
 		return nil
 	}
-	if bytes.Compare(apiService.Spec.CABundle, c.caBundle) == 0 {
+	if bytes.Equal(apiService.Spec.CABundle, c.caBundle) {
 		return nil
 	}
 
