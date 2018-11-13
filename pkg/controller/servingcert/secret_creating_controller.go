@@ -20,8 +20,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/openshift/library-go/pkg/crypto"
 	ocontroller "github.com/openshift/library-go/pkg/controller"
+	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/servingcert/cryptoextensions"
 )
 
@@ -128,7 +128,7 @@ func (sc *ServiceServingCertController) Run(workers int, stopCh <-chan struct{})
 
 	glog.V(5).Infof("Starting workers")
 	for i := 0; i < workers; i++ {
-		go wait.Until(sc.worker, time.Second, stopCh)
+		go wait.Until(sc.runWorker, time.Second, stopCh)
 	}
 	<-stopCh
 	glog.V(1).Infof("Shutting down")
@@ -172,16 +172,13 @@ func (sc *ServiceServingCertController) enqueueService(obj interface{}) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (sc *ServiceServingCertController) worker() {
-	for {
-		if !sc.work() {
-			return
-		}
+func (c *ServiceServingCertController) runWorker() {
+	for c.processNextWorkItem() {
 	}
 }
 
 // work returns true if the worker thread should continue
-func (sc *ServiceServingCertController) work() bool {
+func (sc *ServiceServingCertController) processNextWorkItem() bool {
 	key, quit := sc.queue.Get()
 	if quit {
 		return false

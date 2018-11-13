@@ -6,12 +6,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/util/logs"
 
-	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	servicecertsignerv1alpha1 "github.com/openshift/api/servicecertsigner/v1alpha1"
@@ -28,12 +29,8 @@ var (
 )
 
 func init() {
-	if err := operatorv1alpha1.AddToScheme(configScheme); err != nil {
-		panic(err)
-	}
-	if err := servicecertsignerv1alpha1.AddToScheme(configScheme); err != nil {
-		panic(err)
-	}
+	utilruntime.Must(operatorv1alpha1.Install(configScheme))
+	utilruntime.Must(servicecertsignerv1alpha1.Install(configScheme))
 }
 
 type ControllerCommandOptions struct {
