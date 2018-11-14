@@ -92,7 +92,7 @@ func (ic *ConfigMapCABundleInjectionController) syncConfigMap(obj interface{}) e
 
 func (c *ConfigMapCABundleInjectionController) handleConfigMap(obj interface{}, event string) {
 	cm := obj.(*v1.ConfigMap)
-	if !api.HasInjectCABundleAnnotation(cm.Annotations) {
+	if !api.HasInjectCABundleAnnotation(cm) {
 		return
 	}
 

@@ -68,7 +68,7 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 	if err != nil {
 		return err
 	}
-	if !api.HasInjectCABundleAnnotation(apiService.Annotations) {
+	if !api.HasInjectCABundleAnnotation(apiService) {
 		return nil
 	}
 	if bytes.Equal(apiService.Spec.CABundle, c.caBundle) {
@@ -84,7 +84,7 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 
 func (c *ServiceServingCertUpdateController) handleAPIService(obj interface{}, event string) {
 	apiService := obj.(*apiregistrationapiv1.APIService)
-	if !api.HasInjectCABundleAnnotation(apiService.Annotations) {
+	if !api.HasInjectCABundleAnnotation(apiService) {
 		return
 	}
 
