@@ -243,24 +243,32 @@ func getNumFailures(service *v1.Service) int {
 }
 
 func (sc *ServiceServingCertController) requiresCertGeneration(service *v1.Service) bool {
-	if service.Annotations[api.ServingCertCreatedByAnnotation] == sc.commonName() {
-		return false
-	}
-	if getNumFailures(service) >= sc.maxRetries {
-		return false
-	}
+	// check the secret since it could not have been created yet
 	secretName := service.Annotations[api.ServingCertSecretAnnotation]
 	if len(secretName) == 0 {
 		return false
 	}
 	_, err := sc.secretLister.Secrets(service.Namespace).Get(secretName)
 	if kapierrors.IsNotFound(err) {
+		// we have not created the secret yet
 		return true
 	}
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("unable to get the secret %s/%s: %v", service.Namespace, secretName, err))
 		return false
 	}
+
+	// check to see if the service was updated by us
+	if service.Annotations[api.ServingCertCreatedByAnnotation] == sc.commonName() {
+		return false
+	}
+	// we have failed too many times on this service, give up
+	if getNumFailures(service) >= sc.maxRetries {
+		return false
+	}
+
+	// the secret exists but the service was either not updated to include the correct created
+	// by annotation or it does not match what we expect (i.e. the certificate has been rotated)
 	return true
 }
 

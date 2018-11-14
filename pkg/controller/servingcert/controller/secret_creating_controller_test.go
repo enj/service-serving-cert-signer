@@ -446,6 +446,12 @@ func TestSkipGenerationControllerFlow(t *testing.T) {
 
 		return err
 	}
+
+	secretToAdd := &v1.Secret{}
+	secretToAdd.Name = expectedSecretName
+	secretToAdd.Namespace = namespace
+	fakeSecretWatch.Add(secretToAdd)
+
 	informerFactory.Start(stopChannel)
 	go controller.Run(1, stopChannel)
 
@@ -469,13 +475,6 @@ func TestSkipGenerationControllerFlow(t *testing.T) {
 			t.Errorf("no mutation expected, but we got %v", action)
 		}
 	}
-
-	secretToAdd := &v1.Secret{}
-	secretToAdd.Name = expectedSecretName
-	secretToAdd.Namespace = namespace
-	fakeSecretWatch.Add(secretToAdd)
-	// makes sure that our lister has the secret.  Given wiring, I think it's this or kill the test
-	time.Sleep(2 * time.Second)
 
 	kubeclient.ClearActions()
 	serviceToAdd.Annotations = map[string]string{api.ServingCertSecretAnnotation: expectedSecretName, api.ServingCertCreatedByAnnotation: caName}
