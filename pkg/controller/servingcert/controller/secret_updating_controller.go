@@ -4,16 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
-
 	"k8s.io/api/core/v1"
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	informers "k8s.io/client-go/informers/core/v1"
 	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
 
 	ocontroller "github.com/openshift/library-go/pkg/controller"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -32,14 +29,12 @@ type ServiceServingCertUpdateController struct {
 	// minTimeLeftForCert is how much time is remaining for the serving cert before regenerating it.
 	minTimeLeftForCert time.Duration
 
-	// secrets that need to be checked
-	queue workqueue.RateLimitingInterface
-
 	// standard controller loop
-	*controller.Controller
+	// secrets that need to be checked
+	controller.Runner
 }
 
-func NewServiceServingCertUpdateController(services informers.ServiceInformer, secrets informers.SecretInformer, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string, resyncInterval time.Duration) *ServiceServingCertUpdateController {
+func NewServiceServingCertUpdateController(services informers.ServiceInformer, secrets informers.SecretInformer, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) *ServiceServingCertUpdateController {
 	sc := &ServiceServingCertUpdateController{
 		secretClient:  secretClient,
 		serviceLister: services.Lister(),
@@ -51,65 +46,30 @@ func NewServiceServingCertUpdateController(services informers.ServiceInformer, s
 		minTimeLeftForCert: 1 * time.Hour,
 	}
 
-	secrets.Informer().AddEventHandlerWithResyncPeriod(
-		cache.ResourceEventHandlerFuncs{
+	sc.Runner = controller.New("ServiceServingCertUpdateController", sc.syncSecret).
+		WithInformerSynced(services.Informer().GetController().HasSynced).
+		WithInformer(secrets.Informer(), controller.FilterFuncs{
 			AddFunc:    sc.addSecret,
 			UpdateFunc: sc.updateSecret,
-		},
-		resyncInterval,
-	)
-
-	internalController, queue := controller.New("ServiceServingCertUpdateController", sc.syncSecret,
-		services.Informer().GetController().HasSynced, secrets.Informer().GetController().HasSynced)
-
-	sc.Controller = internalController
-	sc.queue = queue
+		})
 
 	return sc
 }
 
-func (sc *ServiceServingCertUpdateController) enqueueSecret(obj *v1.Secret) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		glog.Errorf("Couldn't get key for object %+v: %v", obj, err)
-		return
-	}
-
-	sc.queue.Add(key)
-}
-
-func (sc *ServiceServingCertUpdateController) addSecret(obj interface{}) {
+func (sc *ServiceServingCertUpdateController) addSecret(obj metav1.Object) bool {
 	secret := obj.(*v1.Secret)
-	if _, ok := toServiceName(secret); !ok {
-		return
-	}
-
-	glog.V(4).Infof("adding %s", secret.Name)
-	sc.enqueueSecret(secret)
+	_, ok := toServiceName(secret)
+	return ok
 }
 
-func (sc *ServiceServingCertUpdateController) updateSecret(old, cur interface{}) {
-	secret := cur.(*v1.Secret)
-	if _, ok := toServiceName(secret); !ok {
-		// if the current doesn't have a service name, check the old
-		secret = old.(*v1.Secret)
-		if _, ok := toServiceName(secret); !ok {
-			return
-		}
-	}
-
-	glog.V(4).Infof("updating %s", secret.Name)
-	sc.enqueueSecret(secret)
+func (sc *ServiceServingCertUpdateController) updateSecret(old, cur metav1.Object) bool {
+	// if the current doesn't have a service name, check the old
+	// TODO drop this
+	return sc.addSecret(cur) || sc.addSecret(old)
 }
 
-func (sc *ServiceServingCertUpdateController) syncSecret(obj interface{}) error {
-	key := obj.(string)
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	sharedSecret, err := sc.secretLister.Secrets(namespace).Get(name)
+func (sc *ServiceServingCertUpdateController) syncSecret(key controller.Key) error {
+	sharedSecret, err := sc.secretLister.Secrets(key.GetNamespace()).Get(key.GetName())
 	if kapierrors.IsNotFound(err) {
 		return nil
 	}

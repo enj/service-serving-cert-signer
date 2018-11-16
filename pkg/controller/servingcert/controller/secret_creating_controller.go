@@ -16,8 +16,6 @@ import (
 	informers "k8s.io/client-go/informers/core/v1"
 	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
 
 	ocontroller "github.com/openshift/library-go/pkg/controller"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -37,17 +35,15 @@ type ServiceServingCertController struct {
 	dnsSuffix  string
 	maxRetries int
 
-	// services that need to be checked
-	queue workqueue.RateLimitingInterface
-
 	// standard controller loop
-	*controller.Controller
+	// services that need to be checked
+	controller.Runner
 
 	// syncHandler does the work. It's factored out for unit testing
-	syncHandler cache.ProcessFunc
+	syncHandler controller.ProcessFunc
 }
 
-func NewServiceServingCertController(services informers.ServiceInformer, secrets informers.SecretInformer, serviceClient kcoreclient.ServicesGetter, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string, resyncInterval time.Duration) *ServiceServingCertController {
+func NewServiceServingCertController(services informers.ServiceInformer, secrets informers.SecretInformer, serviceClient kcoreclient.ServicesGetter, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) *ServiceServingCertController {
 	sc := &ServiceServingCertController{
 		serviceClient: serviceClient,
 		secretClient:  secretClient,
@@ -60,97 +56,57 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 		maxRetries: 10,
 	}
 
-	services.Informer().AddEventHandlerWithResyncPeriod(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) { // TODO we should filter these based on annotations
-				service := obj.(*v1.Service)
-				glog.V(4).Infof("Adding service %s", service.Name)
-				sc.enqueueService(service)
-			},
-			UpdateFunc: func(old, cur interface{}) { // TODO we should filter these based on annotations
-				service := cur.(*v1.Service)
-				glog.V(4).Infof("Updating service %s", service.Name)
-				// Resync on service object relist.
-				sc.enqueueService(service)
-			},
-		}, // TODO we may want to best effort handle deletes and clean up the secrets
-		resyncInterval,
-	)
-
-	secrets.Informer().AddEventHandlerWithResyncPeriod(
-		cache.ResourceEventHandlerFuncs{
-			DeleteFunc: sc.deleteSecret,
-		},
-		resyncInterval,
-	)
-
 	sc.syncHandler = sc.syncService
 
 	// need another layer of indirection so that tests can stub out syncHandler
-	wrapSyncHandler := func(obj interface{}) error {
-		return sc.syncHandler(obj)
+	wrapSyncHandler := func(key controller.Key) error {
+		return sc.syncHandler(key)
 	}
 
-	internalController, queue := controller.New("ServiceServingCertController", wrapSyncHandler,
-		services.Informer().GetController().HasSynced, secrets.Informer().GetController().HasSynced)
-
-	sc.Controller = internalController
-	sc.queue = queue
+	sc.Runner = controller.New("ServiceServingCertController", wrapSyncHandler).
+		WithInformer(services.Informer(), controller.FilterFuncs{
+			AddFunc: func(obj metav1.Object) bool {
+				return true // TODO we should filter these based on annotations
+			},
+			UpdateFunc: func(oldObj, newObj metav1.Object) bool {
+				return true // TODO we should filter these based on annotations
+			},
+			// TODO we may want to best effort handle deletes and clean up the secrets
+		}).
+		WithInformer(secrets.Informer(), controller.FilterFuncs{
+			ParentFunc: func(obj metav1.Object) string {
+				secret := obj.(*v1.Secret)
+				serviceName, _ := toServiceName(secret)
+				return serviceName
+			},
+			DeleteFunc: sc.deleteSecret,
+		})
 
 	return sc
 }
 
 // deleteSecret handles the case when the service certificate secret is manually removed.
 // In that case the secret will be automatically recreated.
-func (sc *ServiceServingCertController) deleteSecret(obj interface{}) {
-	secret, ok := obj.(*v1.Secret)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("could not get object from tombstone: %+v", obj))
-			return
-		}
-		secret, ok = tombstone.Obj.(*v1.Secret)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a secret: %+v", obj))
-			return
-		}
-	}
-
+func (sc *ServiceServingCertController) deleteSecret(obj metav1.Object) bool {
+	secret := obj.(*v1.Secret)
 	serviceName, ok := toServiceName(secret)
 	if !ok {
-		return
+		return false
 	}
 	service, err := sc.serviceLister.Services(secret.Namespace).Get(serviceName)
 	if kapierrors.IsNotFound(err) {
-		return
+		return false
 	}
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("unable to get service %s/%s: %v", secret.Namespace, serviceName, err))
-		return
+		return false
 	}
 	glog.V(4).Infof("recreating secret for service %s/%s", service.Namespace, service.Name)
-	sc.enqueueService(service)
+	return true
 }
 
-func (sc *ServiceServingCertController) enqueueService(obj *v1.Service) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("could not get key for object %+v: %v", obj, err))
-		return
-	}
-
-	sc.queue.Add(key)
-}
-
-func (sc *ServiceServingCertController) syncService(obj interface{}) error {
-	key := obj.(string)
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	sharedService, err := sc.serviceLister.Services(namespace).Get(name)
+func (sc *ServiceServingCertController) syncService(key controller.Key) error {
+	sharedService, err := sc.serviceLister.Services(key.GetNamespace()).Get(key.GetName())
 	if kapierrors.IsNotFound(err) {
 		return nil
 	}

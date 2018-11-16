@@ -15,6 +15,10 @@ func HasInjectCABundleAnnotation(metadata v1.Object) bool {
 	return strings.EqualFold(metadata.GetAnnotations()[InjectCABundleAnnotationName], "true")
 }
 
+func HasInjectCABundleAnnotationUpdate(old, cur v1.Object) bool {
+	return HasInjectCABundleAnnotation(cur)
+}
+
 // Annotations on service
 const (
 	// ServingCertSecretAnnotation stores the name of the secret to generate into.

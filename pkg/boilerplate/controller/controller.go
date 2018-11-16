@@ -6,30 +6,97 @@ import (
 
 	"github.com/golang/glog"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
 
-func New(name string, sync cache.ProcessFunc, cacheSyncs ...cache.InformerSynced) (*Controller, workqueue.RateLimitingInterface) {
+type Runner interface {
+	Run(workers int, stopCh <-chan struct{})
+}
+
+func New(name string, sync ProcessFunc) *Controller {
 	c := &Controller{
 		name:        name,
 		syncHandler: sync,
-		cacheSyncs:  cacheSyncs,
-		queue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name),
 	}
-	return c, c.queue
+	return c.WithRateLimiter(workqueue.DefaultControllerRateLimiter())
 }
 
 type Controller struct {
 	name        string
-	syncHandler cache.ProcessFunc
-	cacheSyncs  []cache.InformerSynced
+	syncHandler ProcessFunc
 	queue       workqueue.RateLimitingInterface
+
+	cacheSyncs []cache.InformerSynced
+	maxRetries int
 }
 
-// Run starts the serviceCertSigner and blocks until stopCh is closed.
+func (c *Controller) WithMaxRetries(maxRetries int) *Controller {
+	c.maxRetries = maxRetries
+	return c
+}
+
+func (c *Controller) WithRateLimiter(limiter workqueue.RateLimiter) *Controller {
+	c.queue = workqueue.NewNamedRateLimitingQueue(limiter, c.name)
+	return c
+}
+
+func (c *Controller) WithInformerSynced(synced cache.InformerSynced) *Controller {
+	c.cacheSyncs = append(c.cacheSyncs, synced)
+	return c
+}
+
+func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) *Controller {
+	c.cacheSyncs = append(c.cacheSyncs, informer.GetController().HasSynced)
+	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			object := metaOrDie(obj)
+			if filter.Add(object) {
+				glog.V(4).Infof("%s: handling add %s/%s", c.name, object.GetNamespace(), object.GetName())
+				c.add(filter, object)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldObject := metaOrDie(oldObj)
+			newObject := metaOrDie(newObj)
+			if filter.Update(oldObject, newObject) {
+				glog.V(4).Infof("%s: handling update %s/%s", c.name, newObject.GetNamespace(), newObject.GetName())
+				c.add(filter, newObject)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			accessor, err := meta.Accessor(obj)
+			if err != nil {
+				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					utilruntime.HandleError(fmt.Errorf("could not get object from tombstone: %+v", obj))
+					return
+				}
+				accessor, err = meta.Accessor(tombstone.Obj)
+				if err != nil {
+					utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a secret: %+v", obj))
+					return
+				}
+			}
+			if filter.Delete(accessor) {
+				glog.V(4).Infof("%s: handling delete %s/%s", c.name, accessor.GetNamespace(), accessor.GetName())
+				c.add(filter, accessor)
+			}
+		},
+	})
+	return c
+}
+
+func (c *Controller) add(filter Filter, object v1.Object) {
+	parent := filter.Parent(object)
+	qKey := QueueKey{Namespace: object.GetNamespace(), Name: parent}
+	c.queue.Add(qKey)
+}
+
 func (c *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
@@ -59,16 +126,37 @@ func (c *Controller) processNextWorkItem() bool {
 	if quit {
 		return false
 	}
-	defer c.queue.Done(key)
 
-	err := c.syncHandler(key)
-	if err == nil {
-		c.queue.Forget(key)
-		return true
-	}
+	qKey := key.(QueueKey)
+	defer c.queue.Done(qKey)
 
-	utilruntime.HandleError(fmt.Errorf("%v failed with: %v", key, err))
-	c.queue.AddRateLimited(key)
+	err := c.syncHandler(qKey)
+	c.handleKey(qKey, err)
 
 	return true
+}
+
+func (c *Controller) handleKey(key QueueKey, err error) {
+	if err == nil {
+		c.queue.Forget(key)
+		return
+	}
+
+	retryForever := c.maxRetries <= 0
+	if retryForever || c.queue.NumRequeues(key) < c.maxRetries {
+		utilruntime.HandleError(fmt.Errorf("%v failed with: %v", key, err))
+		c.queue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(fmt.Errorf("dropping key %v out of the queue: %v", key, err))
+	c.queue.Forget(key)
+}
+
+func metaOrDie(obj interface{}) v1.Object {
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		panic(err) // this should never happen
+	}
+	return accessor
 }

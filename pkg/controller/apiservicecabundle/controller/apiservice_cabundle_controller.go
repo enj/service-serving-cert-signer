@@ -2,15 +2,8 @@ package controller
 
 import (
 	"bytes"
-	"fmt"
-
-	"github.com/golang/glog"
 
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
-	apiregistrationapiv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	apiserviceclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1"
 	apiserviceinformer "k8s.io/kube-aggregator/pkg/client/informers/externalversions/apiregistration/v1"
 	apiservicelister "k8s.io/kube-aggregator/pkg/client/listers/apiregistration/v1"
@@ -25,11 +18,9 @@ type ServiceServingCertUpdateController struct {
 
 	caBundle []byte
 
-	// services that need to be checked
-	queue workqueue.RateLimitingInterface
-
 	// standard controller loop
-	*controller.Controller
+	// api services that need to be checked
+	controller.Runner
 }
 
 func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServiceInformer, apiServiceClient apiserviceclient.APIServicesGetter, caBundle []byte) *ServiceServingCertUpdateController {
@@ -39,35 +30,25 @@ func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServ
 		caBundle:         caBundle,
 	}
 
-	apiServiceInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    sc.addAPIService,
-			UpdateFunc: sc.updateAPIService,
-		},
-	)
-
-	internalController, queue := controller.New("APIServiceCABundleInjector", sc.syncAPIService, apiServiceInformer.Informer().GetController().HasSynced)
-
-	sc.Controller = internalController
-	sc.queue = queue
+	sc.Runner = controller.New("APIServiceCABundleInjector", sc.syncAPIService).
+		WithInformer(apiServiceInformer.Informer(), controller.FilterFuncs{
+			AddFunc:    api.HasInjectCABundleAnnotation,
+			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
+		})
 
 	return sc
 }
 
-func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) error {
-	key := obj.(string)
-	_, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	apiService, err := c.apiServiceLister.Get(name)
+func (c *ServiceServingCertUpdateController) syncAPIService(key controller.Key) error {
+	apiService, err := c.apiServiceLister.Get(key.GetName())
 	if kapierrors.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+
+	// check if we need to do anything
 	if !api.HasInjectCABundleAnnotation(apiService) {
 		return nil
 	}
@@ -80,28 +61,4 @@ func (c *ServiceServingCertUpdateController) syncAPIService(obj interface{}) err
 	apiServiceToUpdate.Spec.CABundle = c.caBundle
 	_, err = c.apiServiceClient.APIServices().Update(apiServiceToUpdate)
 	return err
-}
-
-func (c *ServiceServingCertUpdateController) handleAPIService(obj interface{}, event string) {
-	apiService := obj.(*apiregistrationapiv1.APIService)
-	if !api.HasInjectCABundleAnnotation(apiService) {
-		return
-	}
-
-	glog.V(4).Infof("%s %s", event, apiService.Name)
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("could not get key for object %+v: %v", obj, err))
-		return
-	}
-
-	c.queue.Add(key)
-}
-
-func (c *ServiceServingCertUpdateController) addAPIService(obj interface{}) {
-	c.handleAPIService(obj, "adding")
-}
-
-func (c *ServiceServingCertUpdateController) updateAPIService(old, cur interface{}) {
-	c.handleAPIService(cur, "updating")
 }

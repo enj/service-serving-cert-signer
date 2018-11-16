@@ -14,6 +14,7 @@ import (
 	apiserviceclientfake "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/fake"
 	apiservicelister "k8s.io/kube-aggregator/pkg/client/listers/apiregistration/v1"
 
+	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/controller"
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/api"
 )
 
@@ -115,7 +116,7 @@ func TestSyncAPIService(t *testing.T) {
 				caBundle:         tc.caBundle,
 			}
 
-			err := c.syncAPIService(tc.key)
+			err := c.syncAPIService(controller.QueueKey{Name: tc.key})
 			if err != nil {
 				t.Fatal(err)
 			}
