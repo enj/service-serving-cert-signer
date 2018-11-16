@@ -31,7 +31,7 @@ func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInfor
 		ca:              ca,
 	}
 
-	ic.Runner = controller.New("ConfigMapCABundleInjectionController", ic.key, ic.syncConfigMap).
+	ic.Runner = controller.New("ConfigMapCABundleInjectionController", ic).
 		WithInformer(configMaps.Informer(), controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
@@ -40,11 +40,11 @@ func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInfor
 	return ic
 }
 
-func (ic *ConfigMapCABundleInjectionController) key(namespace, name string) (v1.Object, error) {
+func (ic *ConfigMapCABundleInjectionController) Key(namespace, name string) (v1.Object, error) {
 	return ic.configMapLister.ConfigMaps(namespace).Get(name)
 }
 
-func (ic *ConfigMapCABundleInjectionController) syncConfigMap(obj v1.Object) error {
+func (ic *ConfigMapCABundleInjectionController) Sync(obj v1.Object) error {
 	sharedConfigMap := obj.(*corev1.ConfigMap)
 
 	// check if we need to do anything

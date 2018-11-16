@@ -19,10 +19,9 @@ type Runner interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
-func New(name string, key KeyFunc, sync ProcessFunc) *Controller {
+func New(name string, sync Syncer) *Controller {
 	c := &Controller{
 		name: name,
-		key:  key,
 		sync: sync,
 	}
 	return c.WithRateLimiter(workqueue.DefaultControllerRateLimiter())
@@ -30,8 +29,7 @@ func New(name string, key KeyFunc, sync ProcessFunc) *Controller {
 
 type Controller struct {
 	name string
-	key  KeyFunc
-	sync ProcessFunc
+	sync Syncer
 
 	queue      workqueue.RateLimitingInterface
 	maxRetries int
@@ -55,7 +53,6 @@ func (c *Controller) WithInformerSynced(synced cache.InformerSynced) *Controller
 }
 
 func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) *Controller {
-	c.cacheSyncs = append(c.cacheSyncs, informer.GetController().HasSynced)
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			object := metaOrDie(obj)
@@ -92,7 +89,7 @@ func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) 
 			}
 		},
 	})
-	return c
+	return c.WithInformerSynced(informer.GetController().HasSynced)
 }
 
 func (c *Controller) add(filter Filter, object v1.Object) {
@@ -141,14 +138,14 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) handleSync(key queueKey) error {
-	obj, err := c.key(key.namespace, key.name)
+	obj, err := c.sync.Key(key.namespace, key.name)
 	if errors.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return c.sync(obj)
+	return c.sync.Sync(obj)
 }
 
 func (c *Controller) handleKey(key queueKey, err error) {
@@ -166,6 +163,11 @@ func (c *Controller) handleKey(key queueKey, err error) {
 
 	utilruntime.HandleError(fmt.Errorf("dropping key %v out of the queue: %v", key, err))
 	c.queue.Forget(key)
+}
+
+type queueKey struct {
+	namespace string
+	name      string
 }
 
 func metaOrDie(obj interface{}) v1.Object {

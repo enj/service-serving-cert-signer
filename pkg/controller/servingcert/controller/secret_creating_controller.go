@@ -40,7 +40,7 @@ type ServiceServingCertController struct {
 	controller.Runner
 
 	// syncHandler does the work. It's factored out for unit testing
-	syncHandler controller.ProcessFunc
+	syncHandler controller.SyncFunc
 }
 
 func NewServiceServingCertController(services informers.ServiceInformer, secrets informers.SecretInformer, serviceClient kcoreclient.ServicesGetter, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) *ServiceServingCertController {
@@ -58,12 +58,7 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 
 	sc.syncHandler = sc.syncService
 
-	// need another layer of indirection so that tests can stub out syncHandler
-	wrapSyncHandler := func(obj metav1.Object) error {
-		return sc.syncHandler(obj)
-	}
-
-	sc.Runner = controller.New("ServiceServingCertController", sc.key, wrapSyncHandler).
+	sc.Runner = controller.New("ServiceServingCertController", sc).
 		WithInformer(services.Informer(), controller.FilterFuncs{
 			AddFunc: func(obj metav1.Object) bool {
 				return true // TODO we should filter these based on annotations
@@ -105,8 +100,13 @@ func (sc *ServiceServingCertController) deleteSecret(obj metav1.Object) bool {
 	return true
 }
 
-func (sc *ServiceServingCertController) key(namespace, name string) (metav1.Object, error) {
+func (sc *ServiceServingCertController) Key(namespace, name string) (metav1.Object, error) {
 	return sc.serviceLister.Services(namespace).Get(name)
+}
+
+func (sc *ServiceServingCertController) Sync(obj metav1.Object) error {
+	// need another layer of indirection so that tests can stub out syncHandler
+	return sc.syncHandler(obj)
 }
 
 func (sc *ServiceServingCertController) syncService(obj metav1.Object) error {

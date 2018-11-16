@@ -31,7 +31,7 @@ func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServ
 		caBundle:         caBundle,
 	}
 
-	sc.Runner = controller.New("APIServiceCABundleInjector", sc.key, sc.syncAPIService).
+	sc.Runner = controller.New("APIServiceCABundleInjector", sc).
 		WithInformer(apiServiceInformer.Informer(), controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
@@ -40,11 +40,11 @@ func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServ
 	return sc
 }
 
-func (c *ServiceServingCertUpdateController) key(namespace, name string) (v1.Object, error) {
+func (c *ServiceServingCertUpdateController) Key(namespace, name string) (v1.Object, error) {
 	return c.apiServiceLister.Get(name)
 }
 
-func (c *ServiceServingCertUpdateController) syncAPIService(obj v1.Object) error {
+func (c *ServiceServingCertUpdateController) Sync(obj v1.Object) error {
 	apiService := obj.(*apiregistrationv1.APIService)
 
 	// check if we need to do anything

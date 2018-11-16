@@ -46,7 +46,7 @@ func NewServiceServingCertUpdateController(services informers.ServiceInformer, s
 		minTimeLeftForCert: 1 * time.Hour,
 	}
 
-	sc.Runner = controller.New("ServiceServingCertUpdateController", sc.key, sc.syncSecret).
+	sc.Runner = controller.New("ServiceServingCertUpdateController", sc).
 		WithInformerSynced(services.Informer().GetController().HasSynced).
 		WithInformer(secrets.Informer(), controller.FilterFuncs{
 			AddFunc:    sc.addSecret,
@@ -68,11 +68,11 @@ func (sc *ServiceServingCertUpdateController) updateSecret(old, cur metav1.Objec
 	return sc.addSecret(cur) || sc.addSecret(old)
 }
 
-func (sc *ServiceServingCertUpdateController) key(namespace, name string) (metav1.Object, error) {
+func (sc *ServiceServingCertUpdateController) Key(namespace, name string) (metav1.Object, error) {
 	return sc.secretLister.Secrets(namespace).Get(name)
 }
 
-func (sc *ServiceServingCertUpdateController) syncSecret(obj metav1.Object) error {
+func (sc *ServiceServingCertUpdateController) Sync(obj metav1.Object) error {
 	sharedSecret := obj.(*v1.Secret)
 
 	regenerate, service := sc.requiresRegeneration(sharedSecret)
