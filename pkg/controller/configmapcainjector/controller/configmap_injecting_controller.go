@@ -13,38 +13,32 @@ import (
 
 // ConfigMapCABundleInjectionController is responsible for injecting a CA bundle into configMaps annotated with
 // "service.alpha.openshift.io/inject-cabundle"
-type ConfigMapCABundleInjectionController struct {
+type configMapCABundleInjectionController struct {
 	configMapClient kcoreclient.ConfigMapsGetter
 	configMapLister listers.ConfigMapLister
 
 	ca string
-
-	// standard controller loop
-	// configMaps that need to be checked
-	controller.Runner
 }
 
-func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInformer, configMapsClient kcoreclient.ConfigMapsGetter, ca string) *ConfigMapCABundleInjectionController {
-	ic := &ConfigMapCABundleInjectionController{
+func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInformer, configMapsClient kcoreclient.ConfigMapsGetter, ca string) controller.Runner {
+	ic := &configMapCABundleInjectionController{
 		configMapClient: configMapsClient,
 		configMapLister: configMaps.Lister(),
 		ca:              ca,
 	}
 
-	ic.Runner = controller.New("ConfigMapCABundleInjectionController", ic).
+	return controller.New("ConfigMapCABundleInjectionController", ic).
 		WithInformer(configMaps.Informer(), controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
 		})
-
-	return ic
 }
 
-func (ic *ConfigMapCABundleInjectionController) Key(namespace, name string) (v1.Object, error) {
+func (ic *configMapCABundleInjectionController) Key(namespace, name string) (v1.Object, error) {
 	return ic.configMapLister.ConfigMaps(namespace).Get(name)
 }
 
-func (ic *ConfigMapCABundleInjectionController) Sync(obj v1.Object) error {
+func (ic *configMapCABundleInjectionController) Sync(obj v1.Object) error {
 	sharedConfigMap := obj.(*corev1.ConfigMap)
 
 	// check if we need to do anything

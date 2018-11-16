@@ -13,38 +13,32 @@ import (
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/api"
 )
 
-type ServiceServingCertUpdateController struct {
+type serviceServingCertUpdateController struct {
 	apiServiceClient apiserviceclient.APIServicesGetter
 	apiServiceLister apiservicelister.APIServiceLister
 
 	caBundle []byte
-
-	// standard controller loop
-	// api services that need to be checked
-	controller.Runner
 }
 
-func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServiceInformer, apiServiceClient apiserviceclient.APIServicesGetter, caBundle []byte) *ServiceServingCertUpdateController {
-	sc := &ServiceServingCertUpdateController{
+func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServiceInformer, apiServiceClient apiserviceclient.APIServicesGetter, caBundle []byte) controller.Runner {
+	sc := &serviceServingCertUpdateController{
 		apiServiceClient: apiServiceClient,
 		apiServiceLister: apiServiceInformer.Lister(),
 		caBundle:         caBundle,
 	}
 
-	sc.Runner = controller.New("APIServiceCABundleInjector", sc).
+	return controller.New("APIServiceCABundleInjector", sc).
 		WithInformer(apiServiceInformer.Informer(), controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
 		})
-
-	return sc
 }
 
-func (c *ServiceServingCertUpdateController) Key(namespace, name string) (v1.Object, error) {
+func (c *serviceServingCertUpdateController) Key(namespace, name string) (v1.Object, error) {
 	return c.apiServiceLister.Get(name)
 }
 
-func (c *ServiceServingCertUpdateController) Sync(obj v1.Object) error {
+func (c *serviceServingCertUpdateController) Sync(obj v1.Object) error {
 	apiService := obj.(*apiregistrationv1.APIService)
 
 	// check if we need to do anything

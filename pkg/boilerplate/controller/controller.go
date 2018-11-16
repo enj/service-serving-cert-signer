@@ -79,7 +79,7 @@ func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) 
 				}
 				accessor, err = meta.Accessor(tombstone.Obj)
 				if err != nil {
-					utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a secret: %+v", obj))
+					utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an accessor: %+v", obj))
 					return
 				}
 			}

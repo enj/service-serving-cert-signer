@@ -126,7 +126,7 @@ func TestSyncConfigMapCABundle(t *testing.T) {
 			for _, configMap := range tc.startingConfigMaps {
 				index.Add(configMap)
 			}
-			c := &ConfigMapCABundleInjectionController{
+			c := &configMapCABundleInjectionController{
 				configMapLister: listers.NewConfigMapLister(index),
 				configMapClient: fakeClient.CoreV1(),
 				ca:              tc.caBundle,

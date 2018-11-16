@@ -24,7 +24,7 @@ import (
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/servingcert/cryptoextensions"
 )
 
-type ServiceServingCertController struct {
+type serviceServingCertController struct {
 	serviceClient kcoreclient.ServicesGetter
 	secretClient  kcoreclient.SecretsGetter
 
@@ -43,8 +43,8 @@ type ServiceServingCertController struct {
 	syncHandler controller.SyncFunc
 }
 
-func NewServiceServingCertController(services informers.ServiceInformer, secrets informers.SecretInformer, serviceClient kcoreclient.ServicesGetter, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) *ServiceServingCertController {
-	sc := &ServiceServingCertController{
+func NewServiceServingCertController(services informers.ServiceInformer, secrets informers.SecretInformer, serviceClient kcoreclient.ServicesGetter, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) controller.Runner {
+	sc := &serviceServingCertController{
 		serviceClient: serviceClient,
 		secretClient:  secretClient,
 
@@ -82,7 +82,7 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 
 // deleteSecret handles the case when the service certificate secret is manually removed.
 // In that case the secret will be automatically recreated.
-func (sc *ServiceServingCertController) deleteSecret(obj metav1.Object) bool {
+func (sc *serviceServingCertController) deleteSecret(obj metav1.Object) bool {
 	secret := obj.(*v1.Secret)
 	serviceName, ok := toServiceName(secret)
 	if !ok {
@@ -100,16 +100,16 @@ func (sc *ServiceServingCertController) deleteSecret(obj metav1.Object) bool {
 	return true
 }
 
-func (sc *ServiceServingCertController) Key(namespace, name string) (metav1.Object, error) {
+func (sc *serviceServingCertController) Key(namespace, name string) (metav1.Object, error) {
 	return sc.serviceLister.Services(namespace).Get(name)
 }
 
-func (sc *ServiceServingCertController) Sync(obj metav1.Object) error {
+func (sc *serviceServingCertController) Sync(obj metav1.Object) error {
 	// need another layer of indirection so that tests can stub out syncHandler
 	return sc.syncHandler(obj)
 }
 
-func (sc *ServiceServingCertController) syncService(obj metav1.Object) error {
+func (sc *serviceServingCertController) syncService(obj metav1.Object) error {
 	sharedService := obj.(*v1.Service)
 
 	if !sc.requiresCertGeneration(sharedService) {
@@ -121,7 +121,7 @@ func (sc *ServiceServingCertController) syncService(obj metav1.Object) error {
 	return sc.generateCert(serviceCopy)
 }
 
-func (sc *ServiceServingCertController) generateCert(serviceCopy *v1.Service) error {
+func (sc *serviceServingCertController) generateCert(serviceCopy *v1.Service) error {
 	if serviceCopy.Annotations == nil {
 		serviceCopy.Annotations = map[string]string{}
 	}
@@ -196,7 +196,7 @@ func getNumFailures(service *v1.Service) int {
 	return numFailures
 }
 
-func (sc *ServiceServingCertController) requiresCertGeneration(service *v1.Service) bool {
+func (sc *serviceServingCertController) requiresCertGeneration(service *v1.Service) bool {
 	// check the secret since it could not have been created yet
 	secretName := service.Annotations[api.ServingCertSecretAnnotation]
 	if len(secretName) == 0 {
@@ -226,7 +226,7 @@ func (sc *ServiceServingCertController) requiresCertGeneration(service *v1.Servi
 	return true
 }
 
-func (sc *ServiceServingCertController) commonName() string {
+func (sc *serviceServingCertController) commonName() string {
 	return sc.ca.Config.Certs[0].Subject.CommonName
 }
 

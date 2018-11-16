@@ -27,7 +27,7 @@ import (
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/servingcert/cryptoextensions"
 )
 
-func controllerSetup(startingObjects []runtime.Object, t *testing.T) ( /*caName*/ string, *fake.Clientset, *watch.RaceFreeFakeWatcher, *watch.RaceFreeFakeWatcher, *ServiceServingCertController, informers.SharedInformerFactory) {
+func controllerSetup(startingObjects []runtime.Object, t *testing.T) ( /*caName*/ string, *fake.Clientset, *watch.RaceFreeFakeWatcher, *watch.RaceFreeFakeWatcher, *serviceServingCertController, informers.SharedInformerFactory) {
 	certDir, err := ioutil.TempDir("", "serving-cert-unit-")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -65,7 +65,7 @@ func controllerSetup(startingObjects []runtime.Object, t *testing.T) ( /*caName*
 		kubeclient.Core(), kubeclient.Core(), ca, "cluster.local",
 	)
 
-	return signerName, kubeclient, fakeWatch, fakeSecretWatch, controller, informerFactory
+	return signerName, kubeclient, fakeWatch, fakeSecretWatch, controller.(*serviceServingCertController), informerFactory
 }
 
 func checkGeneratedCertificate(t *testing.T, certData []byte, service *v1.Service) {

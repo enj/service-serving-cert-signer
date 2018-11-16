@@ -109,7 +109,7 @@ func TestSyncAPIService(t *testing.T) {
 				index.Add(apiService)
 			}
 
-			c := &ServiceServingCertUpdateController{
+			c := &serviceServingCertUpdateController{
 				apiServiceLister: apiservicelister.NewAPIServiceLister(index),
 				apiServiceClient: fakeClient.ApiregistrationV1(),
 				caBundle:         tc.caBundle,

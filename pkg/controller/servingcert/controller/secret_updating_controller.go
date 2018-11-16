@@ -18,7 +18,7 @@ import (
 	"github.com/openshift/service-serving-cert-signer/pkg/controller/api"
 )
 
-type ServiceServingCertUpdateController struct {
+type serviceServingCertUpdateController struct {
 	secretClient kcoreclient.SecretsGetter
 
 	serviceLister listers.ServiceLister
@@ -28,14 +28,10 @@ type ServiceServingCertUpdateController struct {
 	dnsSuffix string
 	// minTimeLeftForCert is how much time is remaining for the serving cert before regenerating it.
 	minTimeLeftForCert time.Duration
-
-	// standard controller loop
-	// secrets that need to be checked
-	controller.Runner
 }
 
-func NewServiceServingCertUpdateController(services informers.ServiceInformer, secrets informers.SecretInformer, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) *ServiceServingCertUpdateController {
-	sc := &ServiceServingCertUpdateController{
+func NewServiceServingCertUpdateController(services informers.ServiceInformer, secrets informers.SecretInformer, secretClient kcoreclient.SecretsGetter, ca *crypto.CA, dnsSuffix string) controller.Runner {
+	sc := &serviceServingCertUpdateController{
 		secretClient:  secretClient,
 		serviceLister: services.Lister(),
 		secretLister:  secrets.Lister(),
@@ -46,33 +42,31 @@ func NewServiceServingCertUpdateController(services informers.ServiceInformer, s
 		minTimeLeftForCert: 1 * time.Hour,
 	}
 
-	sc.Runner = controller.New("ServiceServingCertUpdateController", sc).
+	return controller.New("ServiceServingCertUpdateController", sc).
 		WithInformerSynced(services.Informer().GetController().HasSynced).
 		WithInformer(secrets.Informer(), controller.FilterFuncs{
 			AddFunc:    sc.addSecret,
 			UpdateFunc: sc.updateSecret,
 		})
-
-	return sc
 }
 
-func (sc *ServiceServingCertUpdateController) addSecret(obj metav1.Object) bool {
+func (sc *serviceServingCertUpdateController) addSecret(obj metav1.Object) bool {
 	secret := obj.(*v1.Secret)
 	_, ok := toServiceName(secret)
 	return ok
 }
 
-func (sc *ServiceServingCertUpdateController) updateSecret(old, cur metav1.Object) bool {
+func (sc *serviceServingCertUpdateController) updateSecret(old, cur metav1.Object) bool {
 	// if the current doesn't have a service name, check the old
 	// TODO drop this
 	return sc.addSecret(cur) || sc.addSecret(old)
 }
 
-func (sc *ServiceServingCertUpdateController) Key(namespace, name string) (metav1.Object, error) {
+func (sc *serviceServingCertUpdateController) Key(namespace, name string) (metav1.Object, error) {
 	return sc.secretLister.Secrets(namespace).Get(name)
 }
 
-func (sc *ServiceServingCertUpdateController) Sync(obj metav1.Object) error {
+func (sc *serviceServingCertUpdateController) Sync(obj metav1.Object) error {
 	sharedSecret := obj.(*v1.Secret)
 
 	regenerate, service := sc.requiresRegeneration(sharedSecret)
@@ -91,7 +85,7 @@ func (sc *ServiceServingCertUpdateController) Sync(obj metav1.Object) error {
 	return err
 }
 
-func (sc *ServiceServingCertUpdateController) requiresRegeneration(secret *v1.Secret) (bool, *v1.Service) {
+func (sc *serviceServingCertUpdateController) requiresRegeneration(secret *v1.Secret) (bool, *v1.Service) {
 	serviceName, ok := toServiceName(secret)
 	if !ok {
 		return false, nil
