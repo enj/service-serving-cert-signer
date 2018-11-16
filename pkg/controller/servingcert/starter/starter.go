@@ -55,7 +55,7 @@ func (o *servingCertOptions) runServingCert(clientConfig *rest.Config, stopCh <-
 
 	kubeInformers.Start(stopCh)
 
-	go servingCertController.Run(1, stopCh)
+	go servingCertController.Run(5, stopCh)
 	go servingCertUpdateController.Run(5, stopCh)
 
 	<-stopCh
