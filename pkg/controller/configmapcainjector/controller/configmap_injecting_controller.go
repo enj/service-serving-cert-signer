@@ -1,7 +1,8 @@
 package controller
 
 import (
-	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	informers "k8s.io/client-go/informers/core/v1"
 	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -30,7 +31,7 @@ func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInfor
 		ca:              ca,
 	}
 
-	ic.Runner = controller.New("ConfigMapCABundleInjectionController", ic.syncConfigMap).
+	ic.Runner = controller.New("ConfigMapCABundleInjectionController", ic.key, ic.syncConfigMap).
 		WithInformer(configMaps.Informer(), controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
@@ -39,14 +40,12 @@ func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInfor
 	return ic
 }
 
-func (ic *ConfigMapCABundleInjectionController) syncConfigMap(key controller.Key) error {
-	sharedConfigMap, err := ic.configMapLister.ConfigMaps(key.GetNamespace()).Get(key.GetName())
-	if kapierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
+func (ic *ConfigMapCABundleInjectionController) key(namespace, name string) (v1.Object, error) {
+	return ic.configMapLister.ConfigMaps(namespace).Get(name)
+}
+
+func (ic *ConfigMapCABundleInjectionController) syncConfigMap(obj v1.Object) error {
+	sharedConfigMap := obj.(*corev1.ConfigMap)
 
 	// check if we need to do anything
 	if !api.HasInjectCABundleAnnotation(sharedConfigMap) {
@@ -66,6 +65,6 @@ func (ic *ConfigMapCABundleInjectionController) syncConfigMap(key controller.Key
 
 	configMapCopy.Data[api.InjectionDataKey] = ic.ca
 
-	_, err = ic.configMapClient.ConfigMaps(configMapCopy.Namespace).Update(configMapCopy)
+	_, err := ic.configMapClient.ConfigMaps(configMapCopy.Namespace).Update(configMapCopy)
 	return err
 }

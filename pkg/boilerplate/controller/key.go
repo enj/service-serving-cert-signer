@@ -1,21 +1,11 @@
 package controller
 
-type Key interface {
-	GetNamespace() string
-	GetName() string
-}
+import "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-type ProcessFunc func(Key) error
+type KeyFunc func(namespace, name string) (v1.Object, error)
+type ProcessFunc func(v1.Object) error
 
-type QueueKey struct {
-	Namespace string
-	Name      string
-}
-
-func (o QueueKey) GetNamespace() string {
-	return o.Namespace
-}
-
-func (o QueueKey) GetName() string {
-	return o.Name
+type queueKey struct {
+	namespace string
+	name      string
 }

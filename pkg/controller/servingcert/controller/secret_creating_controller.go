@@ -59,11 +59,11 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 	sc.syncHandler = sc.syncService
 
 	// need another layer of indirection so that tests can stub out syncHandler
-	wrapSyncHandler := func(key controller.Key) error {
-		return sc.syncHandler(key)
+	wrapSyncHandler := func(obj metav1.Object) error {
+		return sc.syncHandler(obj)
 	}
 
-	sc.Runner = controller.New("ServiceServingCertController", wrapSyncHandler).
+	sc.Runner = controller.New("ServiceServingCertController", sc.key, wrapSyncHandler).
 		WithInformer(services.Informer(), controller.FilterFuncs{
 			AddFunc: func(obj metav1.Object) bool {
 				return true // TODO we should filter these based on annotations
@@ -105,14 +105,12 @@ func (sc *ServiceServingCertController) deleteSecret(obj metav1.Object) bool {
 	return true
 }
 
-func (sc *ServiceServingCertController) syncService(key controller.Key) error {
-	sharedService, err := sc.serviceLister.Services(key.GetNamespace()).Get(key.GetName())
-	if kapierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
+func (sc *ServiceServingCertController) key(namespace, name string) (metav1.Object, error) {
+	return sc.serviceLister.Services(namespace).Get(name)
+}
+
+func (sc *ServiceServingCertController) syncService(obj metav1.Object) error {
+	sharedService := obj.(*v1.Service)
 
 	if !sc.requiresCertGeneration(sharedService) {
 		return nil

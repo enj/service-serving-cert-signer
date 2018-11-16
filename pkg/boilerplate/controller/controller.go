@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -18,21 +19,24 @@ type Runner interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
-func New(name string, sync ProcessFunc) *Controller {
+func New(name string, key KeyFunc, sync ProcessFunc) *Controller {
 	c := &Controller{
-		name:        name,
-		syncHandler: sync,
+		name: name,
+		key:  key,
+		sync: sync,
 	}
 	return c.WithRateLimiter(workqueue.DefaultControllerRateLimiter())
 }
 
 type Controller struct {
-	name        string
-	syncHandler ProcessFunc
-	queue       workqueue.RateLimitingInterface
+	name string
+	key  KeyFunc
+	sync ProcessFunc
+
+	queue      workqueue.RateLimitingInterface
+	maxRetries int
 
 	cacheSyncs []cache.InformerSynced
-	maxRetries int
 }
 
 func (c *Controller) WithMaxRetries(maxRetries int) *Controller {
@@ -93,7 +97,7 @@ func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) 
 
 func (c *Controller) add(filter Filter, object v1.Object) {
 	parent := filter.Parent(object)
-	qKey := QueueKey{Namespace: object.GetNamespace(), Name: parent}
+	qKey := queueKey{namespace: object.GetNamespace(), name: parent}
 	c.queue.Add(qKey)
 }
 
@@ -127,16 +131,27 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	qKey := key.(QueueKey)
+	qKey := key.(queueKey)
 	defer c.queue.Done(qKey)
 
-	err := c.syncHandler(qKey)
+	err := c.handleSync(qKey)
 	c.handleKey(qKey, err)
 
 	return true
 }
 
-func (c *Controller) handleKey(key QueueKey, err error) {
+func (c *Controller) handleSync(key queueKey) error {
+	obj, err := c.key(key.namespace, key.name)
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return c.sync(obj)
+}
+
+func (c *Controller) handleKey(key queueKey, err error) {
 	if err == nil {
 		c.queue.Forget(key)
 		return

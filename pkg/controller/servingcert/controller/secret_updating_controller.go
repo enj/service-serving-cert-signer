@@ -46,7 +46,7 @@ func NewServiceServingCertUpdateController(services informers.ServiceInformer, s
 		minTimeLeftForCert: 1 * time.Hour,
 	}
 
-	sc.Runner = controller.New("ServiceServingCertUpdateController", sc.syncSecret).
+	sc.Runner = controller.New("ServiceServingCertUpdateController", sc.key, sc.syncSecret).
 		WithInformerSynced(services.Informer().GetController().HasSynced).
 		WithInformer(secrets.Informer(), controller.FilterFuncs{
 			AddFunc:    sc.addSecret,
@@ -68,14 +68,12 @@ func (sc *ServiceServingCertUpdateController) updateSecret(old, cur metav1.Objec
 	return sc.addSecret(cur) || sc.addSecret(old)
 }
 
-func (sc *ServiceServingCertUpdateController) syncSecret(key controller.Key) error {
-	sharedSecret, err := sc.secretLister.Secrets(key.GetNamespace()).Get(key.GetName())
-	if kapierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
+func (sc *ServiceServingCertUpdateController) key(namespace, name string) (metav1.Object, error) {
+	return sc.secretLister.Secrets(namespace).Get(name)
+}
+
+func (sc *ServiceServingCertUpdateController) syncSecret(obj metav1.Object) error {
+	sharedSecret := obj.(*v1.Secret)
 
 	regenerate, service := sc.requiresRegeneration(sharedSecret)
 	if !regenerate {
@@ -89,7 +87,7 @@ func (sc *ServiceServingCertUpdateController) syncSecret(key controller.Key) err
 		return err
 	}
 
-	_, err = sc.secretClient.Secrets(secretCopy.Namespace).Update(secretCopy)
+	_, err := sc.secretClient.Secrets(secretCopy.Namespace).Update(secretCopy)
 	return err
 }
 
