@@ -28,7 +28,7 @@ func NewAPIServiceCABundleInjector(apiServiceInformer apiserviceinformer.APIServ
 	}
 
 	return controller.New("APIServiceCABundleInjector", sc).
-		WithInformer(apiServiceInformer.Informer(), controller.FilterFuncs{
+		WithInformer(apiServiceInformer, controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
 		})

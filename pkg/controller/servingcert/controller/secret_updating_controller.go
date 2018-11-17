@@ -43,8 +43,8 @@ func NewServiceServingCertUpdateController(services informers.ServiceInformer, s
 	}
 
 	return controller.New("ServiceServingCertUpdateController", sc).
-		WithInformerSynced(services.Informer().GetController().HasSynced).
-		WithInformer(secrets.Informer(), controller.FilterFuncs{
+		WithInformerSynced(services).
+		WithInformer(secrets, controller.FilterFuncs{
 			AddFunc:    sc.addSecret,
 			UpdateFunc: sc.updateSecret,
 		})

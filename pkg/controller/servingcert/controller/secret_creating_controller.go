@@ -59,7 +59,7 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 	sc.syncHandler = sc.syncService
 
 	sc.Runner = controller.New("ServiceServingCertController", sc).
-		WithInformer(services.Informer(), controller.FilterFuncs{
+		WithInformer(services, controller.FilterFuncs{
 			AddFunc: func(obj metav1.Object) bool {
 				return true // TODO we should filter these based on annotations
 			},
@@ -68,11 +68,11 @@ func NewServiceServingCertController(services informers.ServiceInformer, secrets
 			},
 			// TODO we may want to best effort handle deletes and clean up the secrets
 		}).
-		WithInformer(secrets.Informer(), controller.FilterFuncs{
-			ParentFunc: func(obj metav1.Object) string {
+		WithInformer(secrets, controller.FilterFuncs{
+			ParentFunc: func(obj metav1.Object) (namespace, name string) {
 				secret := obj.(*v1.Secret)
 				serviceName, _ := toServiceName(secret)
-				return serviceName
+				return secret.Namespace, serviceName
 			},
 			DeleteFunc: sc.deleteSecret,
 		})

@@ -19,6 +19,10 @@ type Runner interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
+type InformerGetter interface {
+	Informer() cache.SharedIndexInformer
+}
+
 func New(name string, sync Syncer) *Controller {
 	c := &Controller{
 		name: name,
@@ -47,12 +51,13 @@ func (c *Controller) WithRateLimiter(limiter workqueue.RateLimiter) *Controller 
 	return c
 }
 
-func (c *Controller) WithInformerSynced(synced cache.InformerSynced) *Controller {
-	c.cacheSyncs = append(c.cacheSyncs, synced)
+func (c *Controller) WithInformerSynced(getter InformerGetter) *Controller {
+	c.cacheSyncs = append(c.cacheSyncs, getter.Informer().GetController().HasSynced)
 	return c
 }
 
-func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) *Controller {
+func (c *Controller) WithInformer(getter InformerGetter, filter Filter) *Controller {
+	informer := getter.Informer()
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			object := metaOrDie(obj)
@@ -89,12 +94,12 @@ func (c *Controller) WithInformer(informer cache.SharedInformer, filter Filter) 
 			}
 		},
 	})
-	return c.WithInformerSynced(informer.GetController().HasSynced)
+	return c.WithInformerSynced(getter)
 }
 
 func (c *Controller) add(filter Filter, object v1.Object) {
-	parent := filter.Parent(object)
-	qKey := queueKey{namespace: object.GetNamespace(), name: parent}
+	namespace, name := filter.Parent(object)
+	qKey := queueKey{namespace: namespace, name: name}
 	c.queue.Add(qKey)
 }
 

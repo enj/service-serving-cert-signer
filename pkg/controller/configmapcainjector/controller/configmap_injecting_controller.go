@@ -28,7 +28,7 @@ func NewConfigMapCABundleInjectionController(configMaps informers.ConfigMapInfor
 	}
 
 	return controller.New("ConfigMapCABundleInjectionController", ic).
-		WithInformer(configMaps.Informer(), controller.FilterFuncs{
+		WithInformer(configMaps, controller.FilterFuncs{
 			AddFunc:    api.HasInjectCABundleAnnotation,
 			UpdateFunc: api.HasInjectCABundleAnnotationUpdate,
 		})
