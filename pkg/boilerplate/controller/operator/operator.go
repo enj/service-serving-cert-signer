@@ -14,13 +14,13 @@ type Runner interface {
 	Run(stopCh <-chan struct{})
 }
 
-type Option func(*operator) *operator
+type Option func(*operator)
 
 func New(name string, sync Syncer, opts ...Option) Runner {
 	o := &operator{}
 
 	for _, opt := range opts {
-		o = opt(o)
+		opt(o)
 	}
 
 	o.runner = controller.New(name, &wrapper{Syncer: sync}, o.opts...)
@@ -34,7 +34,7 @@ type operator struct {
 }
 
 func WithInformer(getter controller.InformerGetter, filter Filter) Option {
-	return func(o *operator) *operator {
+	return func(o *operator) {
 		o.opts = append(o.opts,
 			controller.WithInformer(getter, controller.FilterFuncs{
 				ParentFunc: func(obj v1.Object) (namespace, name string) {
@@ -45,7 +45,6 @@ func WithInformer(getter controller.InformerGetter, filter Filter) Option {
 				DeleteFunc: filter.Delete,
 			}),
 		)
-		return o
 	}
 }
 

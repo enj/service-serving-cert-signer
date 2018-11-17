@@ -23,7 +23,7 @@ type InformerGetter interface {
 	Informer() cache.SharedIndexInformer
 }
 
-type Option func(*controller) *controller
+type Option func(*controller)
 
 func New(name string, sync Syncer, opts ...Option) Runner {
 	c := &controller{
@@ -31,10 +31,10 @@ func New(name string, sync Syncer, opts ...Option) Runner {
 		sync: sync,
 	}
 
-	c = WithRateLimiter(workqueue.DefaultControllerRateLimiter())(c)
+	WithRateLimiter(workqueue.DefaultControllerRateLimiter())(c)
 
 	for _, opt := range opts {
-		c = opt(c)
+		opt(c)
 	}
 
 	return c
@@ -51,28 +51,25 @@ type controller struct {
 }
 
 func WithMaxRetries(maxRetries int) Option {
-	return func(c *controller) *controller {
+	return func(c *controller) {
 		c.maxRetries = maxRetries
-		return c
 	}
 }
 
 func WithRateLimiter(limiter workqueue.RateLimiter) Option {
-	return func(c *controller) *controller {
+	return func(c *controller) {
 		c.queue = workqueue.NewNamedRateLimitingQueue(limiter, c.name)
-		return c
 	}
 }
 
 func WithInformerSynced(getter InformerGetter) Option {
-	return func(c *controller) *controller {
+	return func(c *controller) {
 		c.cacheSyncs = append(c.cacheSyncs, getter.Informer().GetController().HasSynced)
-		return c
 	}
 }
 
 func WithInformer(getter InformerGetter, filter Filter) Option {
-	return func(c *controller) *controller {
+	return func(c *controller) {
 		informer := getter.Informer()
 		informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
@@ -110,7 +107,7 @@ func WithInformer(getter InformerGetter, filter Filter) Option {
 				}
 			},
 		})
-		return WithInformerSynced(getter)(c)
+		WithInformerSynced(getter)(c)
 	}
 }
 
