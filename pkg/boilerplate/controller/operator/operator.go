@@ -14,30 +14,43 @@ type Runner interface {
 	Run(stopCh <-chan struct{})
 }
 
-func New(name string, sync Syncer) *Operator {
-	return &Operator{
-		controller: controller.New(name, &wrapper{Syncer: sync}),
+type Option func(*operator) *operator
+
+func New(name string, sync Syncer, opts ...Option) Runner {
+	o := &operator{}
+
+	for _, opt := range opts {
+		o = opt(o)
 	}
-}
 
-type Operator struct {
-	controller *controller.Controller
-}
+	o.runner = controller.New(name, &wrapper{Syncer: sync}, o.opts...)
 
-func (o *Operator) WithInformer(getter controller.InformerGetter, filter Filter) *Operator {
-	o.controller.WithInformer(getter, controller.FilterFuncs{
-		ParentFunc: func(obj v1.Object) (namespace, name string) {
-			return key, key // return our singleton key for all events
-		},
-		AddFunc:    filter.Add,
-		UpdateFunc: filter.Update,
-		DeleteFunc: filter.Delete,
-	})
 	return o
 }
 
-func (o *Operator) Run(stopCh <-chan struct{}) {
+type operator struct {
+	opts   []controller.Option
+	runner controller.Runner
+}
+
+func WithInformer(getter controller.InformerGetter, filter Filter) Option {
+	return func(o *operator) *operator {
+		o.opts = append(o.opts,
+			controller.WithInformer(getter, controller.FilterFuncs{
+				ParentFunc: func(obj v1.Object) (namespace, name string) {
+					return key, key // return our singleton key for all events
+				},
+				AddFunc:    filter.Add,
+				UpdateFunc: filter.Update,
+				DeleteFunc: filter.Delete,
+			}),
+		)
+		return o
+	}
+}
+
+func (o *operator) Run(stopCh <-chan struct{}) {
 	// only start one worker because we only have one key in our queue (see Operator.WithInformer)
 	// since this operator works on a singleton, it does not make sense to ever run more than one worker
-	o.controller.Run(1, stopCh)
+	o.runner.Run(1, stopCh)
 }

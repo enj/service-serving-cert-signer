@@ -23,15 +23,24 @@ type InformerGetter interface {
 	Informer() cache.SharedIndexInformer
 }
 
-func New(name string, sync Syncer) *Controller {
-	c := &Controller{
+type Option func(*controller) *controller
+
+func New(name string, sync Syncer, opts ...Option) Runner {
+	c := &controller{
 		name: name,
 		sync: sync,
 	}
-	return c.WithRateLimiter(workqueue.DefaultControllerRateLimiter())
+
+	c = WithRateLimiter(workqueue.DefaultControllerRateLimiter())(c)
+
+	for _, opt := range opts {
+		c = opt(c)
+	}
+
+	return c
 }
 
-type Controller struct {
+type controller struct {
 	name string
 	sync Syncer
 
@@ -41,69 +50,77 @@ type Controller struct {
 	cacheSyncs []cache.InformerSynced
 }
 
-func (c *Controller) WithMaxRetries(maxRetries int) *Controller {
-	c.maxRetries = maxRetries
-	return c
+func WithMaxRetries(maxRetries int) Option {
+	return func(c *controller) *controller {
+		c.maxRetries = maxRetries
+		return c
+	}
 }
 
-func (c *Controller) WithRateLimiter(limiter workqueue.RateLimiter) *Controller {
-	c.queue = workqueue.NewNamedRateLimitingQueue(limiter, c.name)
-	return c
+func WithRateLimiter(limiter workqueue.RateLimiter) Option {
+	return func(c *controller) *controller {
+		c.queue = workqueue.NewNamedRateLimitingQueue(limiter, c.name)
+		return c
+	}
 }
 
-func (c *Controller) WithInformerSynced(getter InformerGetter) *Controller {
-	c.cacheSyncs = append(c.cacheSyncs, getter.Informer().GetController().HasSynced)
-	return c
+func WithInformerSynced(getter InformerGetter) Option {
+	return func(c *controller) *controller {
+		c.cacheSyncs = append(c.cacheSyncs, getter.Informer().GetController().HasSynced)
+		return c
+	}
 }
 
-func (c *Controller) WithInformer(getter InformerGetter, filter Filter) *Controller {
-	informer := getter.Informer()
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			object := metaOrDie(obj)
-			if filter.Add(object) {
-				glog.V(4).Infof("%s: handling add %s/%s", c.name, object.GetNamespace(), object.GetName())
-				c.add(filter, object)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			oldObject := metaOrDie(oldObj)
-			newObject := metaOrDie(newObj)
-			if filter.Update(oldObject, newObject) {
-				glog.V(4).Infof("%s: handling update %s/%s", c.name, newObject.GetNamespace(), newObject.GetName())
-				c.add(filter, newObject)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			accessor, err := meta.Accessor(obj)
-			if err != nil {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					utilruntime.HandleError(fmt.Errorf("could not get object from tombstone: %+v", obj))
-					return
+func WithInformer(getter InformerGetter, filter Filter) Option {
+	return func(c *controller) *controller {
+		informer := getter.Informer()
+		informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				object := metaOrDie(obj)
+				if filter.Add(object) {
+					glog.V(4).Infof("%s: handling add %s/%s", c.name, object.GetNamespace(), object.GetName())
+					c.add(filter, object)
 				}
-				accessor, err = meta.Accessor(tombstone.Obj)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				oldObject := metaOrDie(oldObj)
+				newObject := metaOrDie(newObj)
+				if filter.Update(oldObject, newObject) {
+					glog.V(4).Infof("%s: handling update %s/%s", c.name, newObject.GetNamespace(), newObject.GetName())
+					c.add(filter, newObject)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				accessor, err := meta.Accessor(obj)
 				if err != nil {
-					utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an accessor: %+v", obj))
-					return
+					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+					if !ok {
+						utilruntime.HandleError(fmt.Errorf("could not get object from tombstone: %+v", obj))
+						return
+					}
+					accessor, err = meta.Accessor(tombstone.Obj)
+					if err != nil {
+						utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an accessor: %+v", obj))
+						return
+					}
 				}
-			}
-			if filter.Delete(accessor) {
-				glog.V(4).Infof("%s: handling delete %s/%s", c.name, accessor.GetNamespace(), accessor.GetName())
-				c.add(filter, accessor)
-			}
-		},
-	})
-	return c.WithInformerSynced(getter)
+				if filter.Delete(accessor) {
+					glog.V(4).Infof("%s: handling delete %s/%s", c.name, accessor.GetNamespace(), accessor.GetName())
+					c.add(filter, accessor)
+				}
+			},
+		})
+		return WithInformerSynced(getter)(c)
+	}
 }
 
-func (c *Controller) add(filter Filter, object v1.Object) {
+func (c *controller) add(filter Filter, object v1.Object) {
 	namespace, name := filter.Parent(object)
 	qKey := queueKey{namespace: namespace, name: name}
 	c.queue.Add(qKey)
 }
 
-func (c *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (c *controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
@@ -122,12 +139,12 @@ func (c *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *Controller) runWorker() {
+func (c *controller) runWorker() {
 	for c.processNextWorkItem() {
 	}
 }
 
-func (c *Controller) processNextWorkItem() bool {
+func (c *controller) processNextWorkItem() bool {
 	key, quit := c.queue.Get()
 	if quit {
 		return false
@@ -142,7 +159,7 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) handleSync(key queueKey) error {
+func (c *controller) handleSync(key queueKey) error {
 	obj, err := c.sync.Key(key.namespace, key.name)
 	if errors.IsNotFound(err) {
 		return nil
@@ -153,7 +170,7 @@ func (c *Controller) handleSync(key queueKey) error {
 	return c.sync.Sync(obj)
 }
 
-func (c *Controller) handleKey(key queueKey, err error) {
+func (c *controller) handleKey(key queueKey, err error) {
 	if err == nil {
 		c.queue.Forget(key)
 		return

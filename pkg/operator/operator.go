@@ -64,13 +64,14 @@ func NewServiceCertSignerOperator(
 		},
 	}
 
-	return operator.New("ServiceCertSignerOperator", c).
-		WithInformer(serviceCertSignerConfigInformer, allEvents).
-		WithInformer(namespacedKubeInformers.Core().V1().ConfigMaps(), allEvents).
-		WithInformer(namespacedKubeInformers.Core().V1().ServiceAccounts(), allEvents).
-		WithInformer(namespacedKubeInformers.Core().V1().Services(), allEvents).
-		WithInformer(namespacedKubeInformers.Apps().V1().Deployments(), allEvents).
-		WithInformer(namespacedKubeInformers.Core().V1().Namespaces(), allEvents)
+	return operator.New("ServiceCertSignerOperator", c,
+		operator.WithInformer(serviceCertSignerConfigInformer, allEvents),
+		operator.WithInformer(namespacedKubeInformers.Core().V1().ConfigMaps(), allEvents),
+		operator.WithInformer(namespacedKubeInformers.Core().V1().ServiceAccounts(), allEvents),
+		operator.WithInformer(namespacedKubeInformers.Core().V1().Services(), allEvents),
+		operator.WithInformer(namespacedKubeInformers.Apps().V1().Deployments(), allEvents),
+		operator.WithInformer(namespacedKubeInformers.Core().V1().Namespaces(), allEvents),
+	)
 }
 
 func (c serviceCertSignerOperator) Key() (metav1.Object, error) {
