@@ -6,17 +6,17 @@ import (
 	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/controller"
 )
 
-type Syncer interface {
+type KeySyncer interface {
 	Key() (v1.Object, error)
-	Sync(v1.Object) error
+	controller.Syncer
 }
 
-var _ controller.Syncer = &wrapper{}
+var _ controller.KeySyncer = &wrapper{}
 
 type wrapper struct {
-	Syncer
+	KeySyncer
 }
 
 func (s *wrapper) Key(namespace, name string) (v1.Object, error) {
-	return s.Syncer.Key()
+	return s.KeySyncer.Key()
 }

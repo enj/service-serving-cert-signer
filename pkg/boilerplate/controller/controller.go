@@ -18,7 +18,7 @@ type Runner interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
-func New(name string, sync Syncer, opts ...Option) Runner {
+func New(name string, sync KeySyncer, opts ...Option) Runner {
 	c := &controller{
 		name: name,
 		sync: sync,
@@ -35,7 +35,7 @@ func New(name string, sync Syncer, opts ...Option) Runner {
 
 type controller struct {
 	name string
-	sync Syncer
+	sync KeySyncer
 
 	queue      workqueue.RateLimitingInterface
 	maxRetries int
@@ -70,7 +70,7 @@ func (c *controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *controller) add(filter Filter, object v1.Object) {
+func (c *controller) add(filter ParentFilter, object v1.Object) {
 	namespace, name := filter.Parent(object)
 	qKey := queueKey{namespace: namespace, name: name}
 	c.queue.Add(qKey)

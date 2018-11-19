@@ -37,7 +37,7 @@ func WithInformerSynced(getter InformerGetter) Option {
 	})
 }
 
-func WithInformer(getter InformerGetter, filter Filter) Option {
+func WithInformer(getter InformerGetter, filter ParentFilter) Option {
 	return toRunOpt(func(c *controller) {
 		informer := getter.Informer()
 		informer.AddEventHandler(cache.ResourceEventHandlerFuncs{

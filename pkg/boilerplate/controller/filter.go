@@ -2,8 +2,12 @@ package controller
 
 import "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-type Filter interface {
+type ParentFilter interface {
 	Parent(obj v1.Object) (namespace, name string)
+	Filter
+}
+
+type Filter interface {
 	Add(obj v1.Object) bool
 	Update(oldObj, newObj v1.Object) bool
 	Delete(obj v1.Object) bool

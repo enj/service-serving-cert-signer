@@ -12,7 +12,7 @@ const key = "🐼"
 
 type Option func(*operator)
 
-func WithInformer(getter controller.InformerGetter, filter Filter) Option {
+func WithInformer(getter controller.InformerGetter, filter controller.Filter) Option {
 	return func(o *operator) {
 		o.opts = append(o.opts,
 			controller.WithInformer(getter, controller.FilterFuncs{

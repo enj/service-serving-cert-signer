@@ -8,10 +8,10 @@ type Runner interface {
 	Run(stopCh <-chan struct{})
 }
 
-func New(name string, sync Syncer, opts ...Option) Runner {
+func New(name string, sync KeySyncer, opts ...Option) Runner {
 	o := &operator{
 		name: name,
-		sync: &wrapper{Syncer: sync},
+		sync: &wrapper{KeySyncer: sync},
 	}
 
 	for _, opt := range opts {
@@ -23,7 +23,7 @@ func New(name string, sync Syncer, opts ...Option) Runner {
 
 type operator struct {
 	name string
-	sync controller.Syncer
+	sync controller.KeySyncer
 
 	opts []controller.Option
 }
