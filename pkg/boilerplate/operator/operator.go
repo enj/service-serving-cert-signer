@@ -9,24 +9,28 @@ type Runner interface {
 }
 
 func New(name string, sync Syncer, opts ...Option) Runner {
-	o := &operator{}
+	o := &operator{
+		name: name,
+		sync: &wrapper{Syncer: sync},
+	}
 
 	for _, opt := range opts {
 		opt(o)
 	}
 
-	o.runner = controller.New(name, &wrapper{Syncer: sync}, o.opts...)
-
 	return o
 }
 
 type operator struct {
-	opts   []controller.Option
-	runner controller.Runner
+	name string
+	sync controller.Syncer
+
+	opts []controller.Option
 }
 
 func (o *operator) Run(stopCh <-chan struct{}) {
-	// only start one worker because we only have one key in our queue (see Operator.WithInformer)
+	runner := controller.New(o.name, o.sync, o.opts...)
+	// only start one worker because we only have one key in our queue (see WithInformer)
 	// since this operator works on a singleton, it does not make sense to ever run more than one worker
-	o.runner.Run(1, stopCh)
+	runner.Run(1, stopCh)
 }
