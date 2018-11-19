@@ -76,12 +76,6 @@ func WithInformer(getter InformerGetter, filter Filter) Option {
 	})
 }
 
-func (c *controller) add(filter Filter, object v1.Object) {
-	namespace, name := filter.Parent(object)
-	qKey := queueKey{namespace: namespace, name: name}
-	c.queue.Add(qKey)
-}
-
 func toRunOpt(opt Option) Option {
 	var once sync.Once
 	return func(c *controller) {

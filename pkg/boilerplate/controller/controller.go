@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -71,6 +72,12 @@ func (c *controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	<-stopCh
+}
+
+func (c *controller) add(filter Filter, object v1.Object) {
+	namespace, name := filter.Parent(object)
+	qKey := queueKey{namespace: namespace, name: name}
+	c.queue.Add(qKey)
 }
 
 func (c *controller) runWorker() {
