@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -47,6 +48,9 @@ type controller struct {
 	queue      workqueue.RateLimitingInterface
 	maxRetries int
 
+	run     bool
+	runOpts []Option
+
 	cacheSyncs []cache.InformerSynced
 }
 
@@ -63,13 +67,13 @@ func WithRateLimiter(limiter workqueue.RateLimiter) Option {
 }
 
 func WithInformerSynced(getter InformerGetter) Option {
-	return func(c *controller) {
+	return toRunOpt(func(c *controller) {
 		c.cacheSyncs = append(c.cacheSyncs, getter.Informer().GetController().HasSynced)
-	}
+	})
 }
 
 func WithInformer(getter InformerGetter, filter Filter) Option {
-	return func(c *controller) {
+	return toRunOpt(func(c *controller) {
 		informer := getter.Informer()
 		informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
@@ -108,7 +112,7 @@ func WithInformer(getter InformerGetter, filter Filter) Option {
 			},
 		})
 		WithInformerSynced(getter)(c)
-	}
+	})
 }
 
 func (c *controller) add(filter Filter, object v1.Object) {
@@ -124,6 +128,11 @@ func (c *controller) Run(workers int, stopCh <-chan struct{}) {
 	glog.Infof("Starting %s", c.name)
 	defer glog.Infof("Shutting down %s", c.name)
 
+	c.run = true
+	for _, opt := range c.runOpts {
+		opt(c)
+	}
+
 	if !cache.WaitForCacheSync(stopCh, c.cacheSyncs...) {
 		utilruntime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
 		return
@@ -134,6 +143,19 @@ func (c *controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	<-stopCh
+}
+
+func toRunOpt(opt Option) Option {
+	var once sync.Once
+	return func(c *controller) {
+		once.Do(func() {
+			if c.run {
+				opt(c)
+				return
+			}
+			c.runOpts = append(c.runOpts, opt)
+		})
+	}
 }
 
 func (c *controller) runWorker() {
