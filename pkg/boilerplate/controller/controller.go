@@ -18,10 +18,6 @@ type Runner interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
-type InformerGetter interface {
-	Informer() cache.SharedIndexInformer
-}
-
 func New(name string, sync Syncer, opts ...Option) Runner {
 	c := &controller{
 		name: name,

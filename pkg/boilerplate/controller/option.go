@@ -15,6 +15,10 @@ import (
 
 type Option func(*controller)
 
+type InformerGetter interface {
+	Informer() cache.SharedIndexInformer
+}
+
 func WithMaxRetries(maxRetries int) Option {
 	return func(c *controller) {
 		c.maxRetries = maxRetries
