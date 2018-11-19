@@ -22,7 +22,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1alpha1helpers"
 	"github.com/openshift/library-go/pkg/operator/versioning"
 	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/controller"
-	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/controller/operator"
+	"github.com/openshift/service-serving-cert-signer/pkg/boilerplate/operator"
 )
 
 const targetNamespaceName = "openshift-service-cert-signer"
